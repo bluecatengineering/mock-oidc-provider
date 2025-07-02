@@ -1,0 +1,67 @@
+{
+  "name": "@bluecateng/mock-oidc-provider",
+  "version": "0.1.0",
+  "description": "Mock OpenID Connect server for testing",
+  "license": "ISC",
+  "scripts": {
+    "build-docker": "docker buildx build -t mock-oidc-provider .",
+    "lint": "eslint .",
+    "lint-ci": "eslint . -f @microsoft/eslint-formatter-sarif -o build/eslint-results.sarif",
+    "prepare": "husky || true"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git@github.com:bluecatengineering/mock-oidc-provider.git"
+  },
+  "keywords": [
+    "cli",
+    "jwt",
+    "mock",
+    "oauth",
+    "oauth2",
+    "oidc",
+    "openid",
+    "pkce",
+    "provider",
+    "server"
+  ],
+  "files": [
+    "src/server.js"
+  ],
+  "bin": "src/server.js",
+  "dependencies": {
+    "cookie-parser": "^1.4.7",
+    "express": "^5.1.0",
+    "jose": "^6.0.11",
+    "morgan": "^1.10.0",
+    "yaml": "^2.8.0"
+  },
+  "devDependencies": {
+    "@bluecateng/commitlint-config-bluecateng": "^1.0.2",
+    "@bluecateng/eslint-config-node": "^5.0.2",
+    "@bluecateng/git-check-push": "^1.0.1",
+    "@bluecateng/prettier-config": "^1.0.0",
+    "@commitlint/cli": "^19.8.1",
+    "@microsoft/eslint-formatter-sarif": "^3.1.0",
+    "eslint": "^9.30.1",
+    "eslint-plugin-regexp": "^2.9.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.1.2",
+    "prettier": "^3.6.0"
+  },
+  "prettier": "@bluecateng/prettier-config",
+  "commitlint": {
+    "extends": [
+      "@bluecateng/commitlint-config-bluecateng"
+    ]
+  },
+  "lint-staged": {
+    "*.{js,mjs}": [
+      "eslint --fix --max-warnings 0 --no-ignore",
+      "prettier --write"
+    ],
+    "*.{json,md,yaml}": [
+      "prettier --write"
+    ]
+  }
+}

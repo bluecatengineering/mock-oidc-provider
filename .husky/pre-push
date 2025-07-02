@@ -1,0 +1,1 @@
+npx @bluecateng/git-check-push "$1"
