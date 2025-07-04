@@ -7,13 +7,15 @@
 
 A mock OpenID Connect provider which can be used for testing.
 This provider is based on the [OpenID Connect Core 1.0 specification](https://openid.net/specs/openid-connect-core-1_0.html),
-and inspired by [OpenID Provider Mock](https://github.com/geigerzaehler/oidc-provider-mock).
+and inspired by [OpenID Provider Mock](https://github.com/geigerzaehler/oidc-provider-mock)
+and [oauth2-mock-server](https://github.com/axa-group/oauth2-mock-server).
+JWT and cryptography functions provided by [jose](https://github.com/panva/jose).
 
-**Note:** This provider is only meant for testing, therefore most of the verification steps are skipped or ignored.
+**Note:** This provider is only meant for testing; therefore, most verification steps are skipped or ignored.
 
 ## Usage
 
-There are two ways to run the provider, either using `npx` or `docker`.
+There are two ways to run the provider: using `npx` or `docker`.
 
 ### With `npx`
 
@@ -46,7 +48,7 @@ The users file is a YAML file with the following format:
 - The top level must be an array.
 - Each item in the array must be an object.
 - Each object must have a `sub` property whose value is a `string`.
-- Additional properties can be added to the object which will be included as claims in both the access and the ID tokens.
+- Additional properties can be added to the object, which will be included as claims in both the access and the ID tokens.
 - The property `idClaims` can be used to specify claims to be included in the ID token only.
 - The property `accessClaims` can be used to specify claims to be included in the access token only.
 
@@ -75,10 +77,10 @@ The users file is a YAML file with the following format:
 
 ### TLS
 
-The server can run with TLS (HTTPS) enabled, by specifying both the certificate and the key files.
+The server can run with TLS (HTTPS) enabled by specifying both the certificate and the key files.
 The files are loaded and passed to [https.createServer](https://nodejs.org/docs/latest-v22.x/api/https.html#httpscreateserveroptions-requestlistener).
 
-When TLS is enabled the server runs only in this mode (and not in plain HTTP).
+When TLS is enabled, the server runs only in this mode (and not in plain HTTP).
 
 ## Endpoints
 
