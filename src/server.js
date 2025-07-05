@@ -25,7 +25,7 @@ const defaultUsers = [
 const createToken = () => randomBytes(16).toString('base64url');
 
 const encodeVerifier = (verifier, challengeMethod) =>
-	challengeMethod === 'plain' ? verifier : createHash('sha256').update(verifier).digest('base64url');
+	challengeMethod === 'S256' ? createHash('sha256').update(verifier).digest('base64url') : verifier;
 
 const getIssuer = (req) => `${req.protocol}://${req.headers.host}/`; // ending in '/' for Auth0 compatibility
 
@@ -34,7 +34,7 @@ const buildBaseClaims = (req, ttl, aud) => {
 	const iat = floor(Date.now() / 1000);
 	const nbf = iat - 5;
 	const exp = iat + ttl;
-	return {iss, aud, iat, nbf, exp};
+	return {iss, aud, iat, nbf, exp, auth_time: iat};
 };
 
 const signJwt = (header, payload, key) => new SignJWT(payload).setProtectedHeader(header).sign(key);
@@ -57,6 +57,9 @@ const sendToken = (req, res, session, jwk, ttl, aud, scope, nonce) => {
 			res
 				.setHeader('Set-Cookie', buildCookie(session.id))
 				.json({token_type: 'bearer', expires_in: ttl, refresh_token: token, access_token, id_token})
+		)
+		.catch(
+			(error) => (console.error(error), res.status(500).json({error: 'server_error', error_description: error.message}))
 		);
 };
 
@@ -108,7 +111,7 @@ const handleOpenidConfiguration = (req, res) => {
 		response_types_supported: ['code'],
 		scopes_supported: ['openid', 'profile', 'email'],
 		subject_types_supported: ['public'],
-		token_endpoint_auth_methods_supported: ['client_secret_basic'],
+		token_endpoint_auth_methods_supported: ['client_secret_basic', 'client_secret_post'],
 		token_endpoint_auth_signing_alg_values_supported: ['RS256'],
 	});
 };
@@ -130,7 +133,7 @@ const handleAuthorize =
 			scope,
 			state,
 			nonce,
-		} = req.query;
+		} = {code_challenge_method: 'plain', ...req.query};
 		const sessionId = req.cookies['mock-auth'];
 		if (responseType !== 'code') {
 			showErrorPage(res, `The response type '${sanitize(responseType)}' is not supported.`);
@@ -150,7 +153,7 @@ const handleAuthorize =
 <title>Mock Authentication</title>
 <style>
 html {
-font: 400 22px Roboto, 'Open Sans', Helvetica, Arial, sans-serif;;
+font: 400 22px Roboto, 'Open Sans', Helvetica, Arial, sans-serif;
 }
 body {
 margin: 1rem;
@@ -263,7 +266,7 @@ const handleRevoke =
 	({sessions}) =>
 	(req, res) => {
 		const token = req.body.token;
-		for (const session of sessions) {
+		for (const session of sessions.values()) {
 			if (session.token === token) {
 				session.token = null;
 				break;
@@ -288,11 +291,11 @@ const handleUserInfo =
 			try {
 				const decoded = decodeJwt(token);
 				if (!decoded || !decoded.sub) {
-					res.status(400).json({error: 'invalid_request', error_description: 'JWT is not valid'});
+					res.status(401).json({error: 'invalid_request', error_description: 'JWT is not valid'});
 				} else {
 					const user = users.find((user) => user.sub === decoded.sub);
 					if (!user) {
-						res.status(404).json({error: 'invalid_request', error_description: 'User not found'});
+						res.status(401).json({error: 'invalid_request', error_description: 'User not found'});
 					} else {
 						// eslint-disable-next-line no-unused-vars -- simple way to remove accessClaims from the user claims
 						const {idClaims, accessClaims, ...claims} = user;
@@ -300,7 +303,7 @@ const handleUserInfo =
 					}
 				}
 			} catch (error) {
-				res.status(400).json({error: 'invalid_request', error_description: error.message});
+				res.status(401).json({error: 'invalid_request', error_description: error.message});
 			}
 		}
 	};
@@ -360,7 +363,7 @@ const cors = (req, res, next) => {
 		res.setHeader('Access-Control-Allow-Origin', origin);
 		const requestMethod = req.headers['access-control-request-method'];
 		if (requestMethod) {
-			res.setHeader('Access-Control-Allow-Method', requestMethod);
+			res.setHeader('Access-Control-Allow-Methods', requestMethod);
 		}
 		const requestHeaders = req.headers['access-control-request-headers'];
 		if (requestHeaders) {
