@@ -1,6 +1,6 @@
 {
   "name": "@bluecateng/mock-oidc-provider",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Mock OpenID Connect server for testing",
   "license": "ISC",
   "scripts": {
