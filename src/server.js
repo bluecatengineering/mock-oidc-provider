@@ -141,7 +141,7 @@ const handleAuthorize =
 			showErrorPage(res, `The code challenge method '${sanitize(challengeMethod)}' is not supported.`);
 		} else if (sessionId && sessions.has(sessionId)) {
 			const code = createToken();
-			codes.set(code, {sessionId, challenge, challengeMethod, scope, nonce});
+			codes.set(code, {sessionId, challenge, challengeMethod, scope, nonce, clientId});
 			res.redirect(`${redirectUri}?${new URLSearchParams({code, state})}`);
 		} else {
 			res.setHeader('Cache-Control', 'no-cache').setHeader('Content-Type', 'text/html; charset=utf-8')
@@ -184,7 +184,7 @@ margin: 0 auto;
 </main>
 <script>
 var form = document.getElementById('form');
-var params = new URLSearchParams(${JSON.stringify({redirect_uri: redirectUri, code_challenge: challenge, code_challenge_method: challengeMethod, scope, state, nonce})});
+var params = new URLSearchParams(${JSON.stringify({redirect_uri: redirectUri, code_challenge: challenge, code_challenge_method: challengeMethod, client_id: clientId, scope, state, nonce})});
 form.onsubmit = (event) => {
 	event.preventDefault();
 	params.set('sub', form.elements.sub.value);
@@ -206,14 +206,14 @@ const handleToken =
 		res.setHeader('Cache-Control', 'no-store');
 		switch (req.body.grant_type) {
 			case 'authorization_code': {
-				const {client_id: aud, code, code_verifier: verifier} = req.body;
+				const {code, code_verifier: verifier} = req.body;
 				const data = codes.get(code);
 				if (!data) {
 					return res.status(401).json({error: 'invalid_request', error_description: 'Code not found'});
 				}
 
 				codes.delete(code);
-				const {sessionId, challenge, challengeMethod, scope, nonce} = data;
+				const {sessionId, challenge, challengeMethod, scope, nonce, clientId: aud} = data;
 				if (challenge !== encodeVerifier(verifier, challengeMethod)) {
 					return res.status(401).json({error: 'invalid_request', error_description: 'Incorrect code verifier'});
 				}
@@ -327,6 +327,7 @@ const handleForm =
 			redirect_uri: redirectUri,
 			code_challenge: challenge,
 			code_challenge_method: challengeMethod,
+			client_id: clientId,
 			scope,
 			state,
 			nonce,
@@ -342,7 +343,7 @@ const handleForm =
 			sessions.set(sessionId, session);
 
 			const code = createToken();
-			codes.set(code, {sessionId, challenge, challengeMethod, scope, nonce});
+			codes.set(code, {sessionId, challenge, challengeMethod, scope, nonce, clientId});
 			res
 				.setHeader('Set-Cookie', buildCookie(sessionId))
 				.redirect(`${redirectUri}?${new URLSearchParams({code, state})}`);
