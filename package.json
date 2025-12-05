@@ -41,7 +41,7 @@
     "@bluecateng/eslint-config-node": "^5.0.2",
     "@bluecateng/git-check-push": "^1.0.1",
     "@bluecateng/prettier-config": "^1.0.0",
-    "@commitlint/cli": "^19.8.1",
+    "@commitlint/cli": "^20.2.0",
     "@microsoft/eslint-formatter-sarif": "^3.1.0",
     "eslint": "^9.30.1",
     "eslint-plugin-regexp": "^2.9.0",
