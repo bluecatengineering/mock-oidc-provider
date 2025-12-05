@@ -7,6 +7,7 @@ FROM gcr.io/distroless/nodejs22-debian12
 EXPOSE 80
 EXPOSE 443
 ENV PORT=80
+ENV TLS_PORT=443
 COPY --from=build /app /app/
 WORKDIR /app
 CMD ["src/server.js"]

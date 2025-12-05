@@ -40,15 +40,16 @@ You can run the provider via `npx` or `docker`.
 
 The server can be configured either via command-line parameters or environment variables.
 
-| command line | env var    | description                                | default |
-| ------------ | ---------- | ------------------------------------------ | ------- |
-| -p, --port   | PORT       | port where the server will listen          | 8092    |
-| -t, --ttl    | TTL        | time to live for tokens (seconds)          | 300     |
-| -u, --users  | USERS_FILE | path to a users YAML file                  |         |
-| -c, --cert   | CERT_FILE  | TLS certificate file (see TLS section)     |         |
-| -k, --key    | KEY_FILE   | TLS private key file (see TLS section)     |         |
-| -j, --jwk    | JWK_FILE   | path to a JWK file used for signing tokens |         |
-| --save-jwk   |            | save the active JWK to the given file      |         |
+| command line   | env var    | description                                                   | default |
+| -------------- | ---------- | ------------------------------------------------------------- | ------- |
+| -p, --port     | PORT       | port where the HTTP server will listen                        | 8092    |
+| -s, --tls-port | TLS_PORT   | port where the HTTPS server will listen (when TLS is enabled) | 8443    |
+| -t, --ttl      | TTL        | time to live for tokens (seconds)                             | 300     |
+| -u, --users    | USERS_FILE | path to a users YAML file                                     |         |
+| -c, --cert     | CERT_FILE  | TLS certificate file (see TLS section)                        |         |
+| -k, --key      | KEY_FILE   | TLS private key file (see TLS section)                        |         |
+| -j, --jwk      | JWK_FILE   | path to a JWK file used for signing tokens                    |         |
+| --save-jwk     |            | save the active JWK to the given file                         |         |
 
 If `--jwk` is not provided, a random RSA key is generated automatically.
 Use `--save-jwk <file>` to write the active JWK (whether generated or loaded) to a JSON file for later reuse.
@@ -92,7 +93,7 @@ Users file format (YAML):
 
 ### TLS
 
-To run the server under HTTPS, specify both:
+To enable HTTPS, specify both:
 
 - `--cert <file>`
 - `--key <file>`
@@ -100,7 +101,12 @@ To run the server under HTTPS, specify both:
 These files are passed directly to
 [`https.createServer`](https://nodejs.org/docs/latest-v22.x/api/https.html#httpscreateserveroptions-requestlistener).
 
-When TLS is enabled, the server listens **only** in HTTPS mode.
+When TLS is enabled:
+
+- An HTTP server **always** runs on `--port` (default: 8092).
+- An HTTPS server also runs on `--tls-port` (default: 8443).
+
+If TLS is not enabled (no cert/key specified), only the HTTP server runs.
 
 ## Endpoints
 

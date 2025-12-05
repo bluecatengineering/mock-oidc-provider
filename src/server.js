@@ -417,7 +417,19 @@ const writeJwk = (jwk, filename) => {
 	console.log(`JSON web key written to file "${filename}".`);
 };
 
-const start = (port, ttl, users, cert, tlsKey, loadedJwk, jwkSaveFile) =>
+const createListener = (server, port, description) =>
+	new Promise((resolve, reject) => {
+		server.listen(port, (error) => {
+			if (error) {
+				reject(error);
+			} else {
+				console.log(description);
+				resolve();
+			}
+		});
+	});
+
+const start = (port, tlsPort, ttl, users, cert, tlsKey, loadedJwk, jwkSaveFile) =>
 	(loadedJwk ? Promise.resolve(loadedJwk) : generateJwk())
 		.then((jwk) => {
 			if (jwkSaveFile) {
@@ -425,27 +437,26 @@ const start = (port, ttl, users, cert, tlsKey, loadedJwk, jwkSaveFile) =>
 			}
 			return importJWK(jwk).then((signingKey) => ({jwk, signingKey}));
 		})
-		.then(
-			({jwk, signingKey}) =>
-				new Promise((resolve, reject) => {
-					const app = configureApp(ttl, users, jwk, signingKey);
+		.then(({jwk, signingKey}) => {
+			const app = configureApp(ttl, users, jwk, signingKey);
 
-					(cert ? createHttpsServer({cert, key: tlsKey}, app) : createHttpServer(app)).listen(port, (error) => {
-						if (error) {
-							reject(error);
-						} else {
-							console.log(`Listening on port ${port}${cert ? ' (TLS enabled)' : ''}`);
-							resolve();
-						}
-					});
-				})
-		);
+			const httpServer = createHttpServer(app);
+			const listeners = [createListener(httpServer, port, `HTTP server listening on port ${port}`)];
+
+			if (cert && tlsKey) {
+				const httpsServer = createHttpsServer({cert, key: tlsKey}, app);
+				listeners.push(createListener(httpsServer, tlsPort, `HTTPS server listening on port ${tlsPort}`));
+			}
+
+			return Promise.all(listeners).then(() => undefined);
+		});
 
 const main = () => {
 	const argv = process.argv;
 	const env = process.env;
 	let i = 2;
 	let port = env.PORT ? +env.PORT : 8092;
+	let tlsPort = env.TLS_PORT ? +env.TLS_PORT : 8443;
 	let ttl = env.TTL ? +env.TTL : 300;
 	let usersFile = env.USERS_FILE;
 	let certFile = env.CERT_FILE;
@@ -459,6 +470,10 @@ const main = () => {
 			case '-p':
 			case '--port':
 				port = +argv[i++];
+				break;
+			case '-s':
+			case '--tls-port':
+				tlsPort = +argv[i++];
 				break;
 			case '-t':
 			case '--ttl':
@@ -496,7 +511,7 @@ const main = () => {
 	if (help) {
 		if (error) console.error(`Unexpected argument: ${error}`);
 		console.error(
-			`Usage: ${argv[1]} [-p|--port <port>] [-t|--ttl <token ttl>] [-u|--users <YAML file>] [-c|--cert <SSL certificate>] [-k|--key <SSL key>] [-j|--jwk <JWK file>] [--save-jwk <JWK file>]`
+			`Usage: ${argv[1]} [-p|--port <port>] [-s|--tls-port <TLS port>] [-t|--ttl <token ttl>] [-u|--users <YAML file>] [-c|--cert <SSL certificate>] [-k|--key <SSL key>] [-j|--jwk <JWK file>] [--save-jwk <JWK file>]`
 		);
 		process.exit(1);
 	}
@@ -536,7 +551,9 @@ const main = () => {
 		console.log('Stopping server');
 		process.exit(0);
 	});
-	start(port, ttl, users, cert, tlsKey, jwk, jwkSaveFile).catch((error) => (console.error(error), process.exit(1)));
+	start(port, tlsPort, ttl, users, cert, tlsKey, jwk, jwkSaveFile).catch(
+		(error) => (console.error(error), process.exit(1))
+	);
 };
 
 try {
