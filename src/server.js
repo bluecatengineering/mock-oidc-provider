@@ -100,7 +100,7 @@ const handleOpenidConfiguration = (req, res) => {
 		authorization_endpoint: `${base}/authorize`,
 		token_endpoint: `${base}/oauth/token`,
 		revocation_endpoint: `${base}/oauth/revoke`,
-		end_session_endpoint: `${base}/endsession`,
+		end_session_endpoint: `${base}/oidc/logout`,
 		userinfo_endpoint: `${base}/userinfo`,
 		introspection_endpoint: `${base}/introspect`,
 		claims_supported: ['aud', 'email', 'exp', 'iat', 'iss', 'name', 'sub'],
@@ -393,7 +393,7 @@ const configureApp = (ttl, users, jwk) => {
 	app.get('/authorize', handleAuthorize(context));
 	app.post('/oauth/token', handleToken(context));
 	app.post('/oauth/revoke', handleRevoke(context));
-	app.get('/endsession', handleEndSession(context));
+	app.get('/oidc/logout', handleEndSession(context));
 	app.get('/userinfo', handleUserInfo(context));
 	app.post('/introspect', handleIntrospect(context));
 
