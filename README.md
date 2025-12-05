@@ -48,6 +48,10 @@ The following options are accepted:
 | -u, --users  | USERS_FILE      | the path to the users file (see users section)         |         |
 | -c, --cert   | CERT_FILE       | the path to the TLS certificate file (see TLS section) |         |
 | -k, --key    | KEY_FILE        | the path to the TLS key file (see TLS section)         |         |
+| -j, --jwk    | JWK_FILE        | the path to the JWK file                               |         |
+| --save-jwk   |                 | save JWK file                                          |         |
+
+If the `--jwk` option is not specified a random RSA key will be generated. The `--save-jwk` option can be used to save the generated JWK for later reuse.
 
 ### Users
 

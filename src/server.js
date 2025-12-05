@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 
-const {readFileSync} = require('node:fs');
+const {readFileSync, writeFileSync} = require('node:fs');
 const {createServer: createHttpServer} = require('node:http');
 const {createServer: createHttpsServer} = require('node:https');
 const {randomBytes, createHash} = require('node:crypto');
@@ -403,27 +403,41 @@ const configureApp = (ttl, users, jwk) => {
 	return app;
 };
 
-const start = (port, ttl, users, cert, key) =>
+const generateJwk = () =>
 	generateKeyPair('RS256', {extractable: true})
 		.then((keyPair) => exportJWK(keyPair.privateKey))
-		.then(
-			(jwk) =>
-				new Promise((resolve, reject) => {
-					jwk.alg = 'RS256';
-					jwk.kid = createToken();
-					console.log(`Generated RSA key with kid "${jwk.kid}"`);
-					const app = configureApp(ttl, users, jwk);
+		.then((jwk) => {
+			jwk.alg = 'RS256';
+			jwk.kid = createToken();
+			console.log(`Generated RSA key with kid "${jwk.kid}"`);
+			return jwk;
+		});
 
-					(cert ? createHttpsServer({cert, key}, app) : createHttpServer(app)).listen(port, (error) => {
-						if (error) {
-							reject(error);
-						} else {
-							console.log(`Listening on port ${port}${cert ? ' (TLS enabled)' : ''}`);
-							resolve();
-						}
-					});
-				})
-		);
+const writeJwk = (jwk, filename) => {
+	writeFileSync(filename, JSON.stringify(jwk, null, 2));
+	console.log(`JSON web key written to file "${filename}".`);
+};
+
+const start = (port, ttl, users, cert, key, jwk, jwkSaveFile) =>
+	(jwk ? Promise.resolve(jwk) : generateJwk()).then(
+		(jwk) =>
+			new Promise((resolve, reject) => {
+				if (jwkSaveFile) {
+					writeJwk(jwk, jwkSaveFile);
+				}
+
+				const app = configureApp(ttl, users, jwk);
+
+				(cert ? createHttpsServer({cert, key}, app) : createHttpServer(app)).listen(port, (error) => {
+					if (error) {
+						reject(error);
+					} else {
+						console.log(`Listening on port ${port}${cert ? ' (TLS enabled)' : ''}`);
+						resolve();
+					}
+				});
+			})
+	);
 
 const main = () => {
 	const argv = process.argv;
@@ -434,6 +448,8 @@ const main = () => {
 	let usersFile = env.USERS_FILE;
 	let certFile = env.CERT_FILE;
 	let keyFile = env.KEY_FILE;
+	let jwkFile = env.JWK_FILE;
+	let jwkSaveFile = false;
 	let error = null;
 	let help = false;
 	while (i < argv.length && !help) {
@@ -458,6 +474,13 @@ const main = () => {
 			case '--key':
 				keyFile = argv[i++];
 				break;
+			case '-j':
+			case '--jwk':
+				jwkFile = argv[i++];
+				break;
+			case '--save-jwk':
+				jwkSaveFile = argv[i++];
+				break;
 			case '-h':
 			case '--help':
 				help = true;
@@ -471,7 +494,7 @@ const main = () => {
 	if (help) {
 		if (error) console.error(`Unexpected argument: ${error}`);
 		console.error(
-			`Usage: ${argv[1]} [-p|--port <port>] [-t|--ttl <token ttl>] [-u|--users <YAML file>] [-c|--cert <SSL certificate>] [-k|--key <SSL key>]`
+			`Usage: ${argv[1]} [-p|--port <port>] [-t|--ttl <token ttl>] [-u|--users <YAML file>] [-c|--cert <SSL certificate>] [-k|--key <SSL key>] [-j|--jwk <JWK file>] [--save-jwk <JWK file>]`
 		);
 		process.exit(1);
 	}
@@ -491,11 +514,27 @@ const main = () => {
 		console.log(`Loading SSL key from "${keyFile}"`);
 		key = readFileSync(keyFile);
 	}
+	let jwk;
+	if (jwkFile) {
+		console.log(`Loading JWK from "${jwkFile}"`);
+		jwk = JSON.parse(readFileSync(jwkFile, 'utf8'));
+		if (jwk.kty !== 'RSA' || !jwk.n || !jwk.e) {
+			console.error(`Invalid RSA JWK in "${jwkFile}"`);
+			process.exit(1);
+		}
+		if (!jwk.kid) {
+			jwk.kid = createToken();
+			console.log(`No kid in JWK; generated kid "${jwk.kid}"`);
+		}
+		if (!jwk.alg) {
+			jwk.alg = 'RS256';
+		}
+	}
 	process.once('SIGINT', () => {
 		console.log('Stopping server');
 		process.exit(0);
 	});
-	start(port, ttl, users, cert, key).catch(console.error);
+	start(port, ttl, users, cert, key, jwk, jwkSaveFile).catch(console.error);
 };
 
 try {
