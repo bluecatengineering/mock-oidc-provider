@@ -43,7 +43,7 @@ const buildHeader = (jwk) => ({typ: 'JWT', alg: 'RS256', kid: jwk.kid});
 
 const buildCookie = (sessionId) => `mock-auth=${sessionId}; Path=/; HttpOnly; SameSite=None; Secure; Max-Age=86400`;
 
-const sendToken = (req, res, session, jwk, ttl, aud, scope, nonce) => {
+const sendToken = (req, res, session, jwk, signingKey, ttl, aud, scope, nonce) => {
 	const token = createToken();
 	const header = buildHeader(jwk);
 	const baseClaims = buildBaseClaims(req, ttl, aud);
@@ -51,8 +51,7 @@ const sendToken = (req, res, session, jwk, ttl, aud, scope, nonce) => {
 	const accessClaims = {...userClaims, ...userAccessClaims, ...baseClaims, scope};
 	const idClaims = {...userClaims, ...userIdClaims, ...baseClaims, nonce};
 	session.token = token;
-	return importJWK(jwk)
-		.then((key) => Promise.all([signJwt(header, accessClaims, key), signJwt(header, idClaims, key)]))
+	return Promise.all([signJwt(header, accessClaims, signingKey), signJwt(header, idClaims, signingKey)])
 		.then(([access_token, id_token]) =>
 			res
 				.setHeader('Set-Cookie', buildCookie(session.id))
@@ -201,7 +200,7 @@ form.error.onclick = () => {
 	};
 
 const handleToken =
-	({users, codes, sessions, ttl, jwk}) =>
+	({users, codes, sessions, ttl, jwk, signingKey}) =>
 	(req, res) => {
 		res.setHeader('Cache-Control', 'no-store');
 		switch (req.body.grant_type) {
@@ -223,12 +222,11 @@ const handleToken =
 					return res.status(401).json({error: 'invalid_request', error_description: 'Session not found'});
 				}
 
-				return sendToken(req, res, session, jwk, ttl, aud, scope, nonce);
+				return sendToken(req, res, session, jwk, signingKey, ttl, aud, scope, nonce);
 			}
 			case 'client_credentials': {
 				const {scope} = req.body;
-				return importJWK(jwk)
-					.then((key) => signJwt(buildHeader(jwk), {...buildBaseClaims(req, ttl), scope}, key))
+				return signJwt(buildHeader(jwk), {...buildBaseClaims(req, ttl), scope}, signingKey)
 					.then((access_token) => ({token_type: 'bearer', expires_in: ttl, access_token}))
 					.then((response) => res.json(response));
 			}
@@ -242,7 +240,7 @@ const handleToken =
 				const sessionId = createToken();
 				const session = {id: sessionId, user};
 				sessions.set(sessionId, session);
-				return sendToken(req, res, session, jwk, ttl, undefined, scope);
+				return sendToken(req, res, session, jwk, signingKey, ttl, undefined, scope);
 			}
 			case 'refresh_token': {
 				const {client_id: aud, refresh_token: refreshToken, scope} = req.body;
@@ -256,7 +254,7 @@ const handleToken =
 					return res.status(401).json({error: 'login_required', error_description: 'Token not found'});
 				}
 
-				return sendToken(req, res, session, jwk, ttl, aud, scope);
+				return sendToken(req, res, session, jwk, signingKey, ttl, aud, scope);
 			}
 		}
 		return res.status(401).json({error: 'invalid_request', error_description: 'Unexpected grant type'});
@@ -373,13 +371,14 @@ const cors = (req, res, next) => {
 	next();
 };
 
-const configureApp = (ttl, users, jwk) => {
+const configureApp = (ttl, users, jwk, signingKey) => {
 	const context = {
 		codes: new Map(),
 		sessions: new Map(),
 		ttl,
 		users,
 		jwk,
+		signingKey,
 	};
 	const app = express();
 	app.use(morgan('dev'));
@@ -418,26 +417,29 @@ const writeJwk = (jwk, filename) => {
 	console.log(`JSON web key written to file "${filename}".`);
 };
 
-const start = (port, ttl, users, cert, key, jwk, jwkSaveFile) =>
-	(jwk ? Promise.resolve(jwk) : generateJwk()).then(
-		(jwk) =>
-			new Promise((resolve, reject) => {
-				if (jwkSaveFile) {
-					writeJwk(jwk, jwkSaveFile);
-				}
+const start = (port, ttl, users, cert, tlsKey, loadedJwk, jwkSaveFile) =>
+	(loadedJwk ? Promise.resolve(loadedJwk) : generateJwk())
+		.then((jwk) => {
+			if (jwkSaveFile) {
+				writeJwk(jwk, jwkSaveFile);
+			}
+			return importJWK(jwk).then((signingKey) => ({jwk, signingKey}));
+		})
+		.then(
+			({jwk, signingKey}) =>
+				new Promise((resolve, reject) => {
+					const app = configureApp(ttl, users, jwk, signingKey);
 
-				const app = configureApp(ttl, users, jwk);
-
-				(cert ? createHttpsServer({cert, key}, app) : createHttpServer(app)).listen(port, (error) => {
-					if (error) {
-						reject(error);
-					} else {
-						console.log(`Listening on port ${port}${cert ? ' (TLS enabled)' : ''}`);
-						resolve();
-					}
-				});
-			})
-	);
+					(cert ? createHttpsServer({cert, key: tlsKey}, app) : createHttpServer(app)).listen(port, (error) => {
+						if (error) {
+							reject(error);
+						} else {
+							console.log(`Listening on port ${port}${cert ? ' (TLS enabled)' : ''}`);
+							resolve();
+						}
+					});
+				})
+		);
 
 const main = () => {
 	const argv = process.argv;
@@ -507,12 +509,12 @@ const main = () => {
 		console.log(`Loading users from "${usersFile}"`);
 		users = parse(readFileSync(usersFile, 'utf8'));
 	}
-	let cert, key;
+	let cert, tlsKey;
 	if (certFile) {
 		console.log(`Loading SSL certificate from "${certFile}"`);
 		cert = readFileSync(certFile);
 		console.log(`Loading SSL key from "${keyFile}"`);
-		key = readFileSync(keyFile);
+		tlsKey = readFileSync(keyFile);
 	}
 	let jwk;
 	if (jwkFile) {
@@ -534,7 +536,7 @@ const main = () => {
 		console.log('Stopping server');
 		process.exit(0);
 	});
-	start(port, ttl, users, cert, key, jwk, jwkSaveFile).catch(console.error);
+	start(port, ttl, users, cert, tlsKey, jwk, jwkSaveFile).catch((error) => (console.error(error), process.exit(1)));
 };
 
 try {
