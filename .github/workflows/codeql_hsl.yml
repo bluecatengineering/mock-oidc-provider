@@ -1,0 +1,22 @@
+name: CodeQL analysis (HSL)
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  schedule:
+    - cron: "0 8 * * *" # every day at 8 AM UTC
+
+jobs:
+  analyze:
+    uses: HSLdevcom/jore4-tools/.github/workflows/shared-codeql.yml@shared-ghas-workflows-v1
+    permissions:
+      security-events: write
+      packages: read
+      contents: read
+      actions: read
+    with:
+      languages: '["javascript-typescript"]'
