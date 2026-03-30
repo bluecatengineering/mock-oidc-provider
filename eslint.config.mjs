@@ -3,7 +3,7 @@ import blueCatNode from '@bluecateng/eslint-config-node';
 
 export default [
 	blueCatNode,
-	regexpPlugin.configs['flat/recommended'],
+	regexpPlugin.configs.recommended,
 	{
 		rules: {
 			'jest/no-deprecated-functions': 'off',
