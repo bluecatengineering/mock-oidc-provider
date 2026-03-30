@@ -21,6 +21,7 @@ const defaultUsers = [
 	{sub: 'foo', idClaims: {name: 'Foo', email: 'foo@example.com'}},
 	{sub: 'bar', idClaims: {name: 'Bar', email: 'bar@example.com'}},
 ];
+const defaultClients = [{sub: 'baz'}];
 
 const createToken = () => randomBytes(16).toString('base64url');
 
@@ -200,7 +201,7 @@ form.error.onclick = () => {
 	};
 
 const handleToken =
-	({users, codes, sessions, ttl, jwk, signingKey}) =>
+	({users, clients, codes, sessions, ttl, jwk, signingKey}) =>
 	(req, res) => {
 		res.setHeader('Cache-Control', 'no-store');
 		switch (req.body.grant_type) {
@@ -225,10 +226,16 @@ const handleToken =
 				return sendToken(req, res, session, jwk, signingKey, ttl, aud, scope, nonce);
 			}
 			case 'client_credentials': {
-				const {scope} = req.body;
-				return signJwt(buildHeader(jwk), {...buildBaseClaims(req, ttl), scope}, signingKey)
-					.then((access_token) => ({token_type: 'bearer', expires_in: ttl, access_token}))
-					.then((response) => res.json(response));
+				const {client_id: clientId, scope} = req.body;
+				const client = clients.find((client) => client.sub === clientId);
+				if (!client) {
+					return res.status(401).json({error: 'invalid_client', error_description: 'Client not found'});
+				}
+				const baseClaims = buildBaseClaims(req, ttl);
+				const accessClaims = {...client, ...baseClaims, scope};
+				return signJwt(buildHeader(jwk), accessClaims, signingKey).then((access_token) =>
+					res.json({token_type: 'bearer', expires_in: ttl, access_token})
+				);
 			}
 			case 'password': {
 				const {username: sub, scope} = req.body;
@@ -371,12 +378,13 @@ const cors = (req, res, next) => {
 	next();
 };
 
-const configureApp = (ttl, users, jwk, signingKey) => {
+const configureApp = (ttl, users, clients, jwk, signingKey) => {
 	const context = {
 		codes: new Map(),
 		sessions: new Map(),
 		ttl,
 		users,
+		clients,
 		jwk,
 		signingKey,
 	};
@@ -429,7 +437,7 @@ const createListener = (server, port, description) =>
 		});
 	});
 
-const start = (port, tlsPort, ttl, users, cert, tlsKey, loadedJwk, jwkSaveFile) =>
+const start = (port, tlsPort, ttl, users, clients, cert, tlsKey, loadedJwk, jwkSaveFile) =>
 	(loadedJwk ? Promise.resolve(loadedJwk) : generateJwk())
 		.then((jwk) => {
 			if (jwkSaveFile) {
@@ -438,7 +446,7 @@ const start = (port, tlsPort, ttl, users, cert, tlsKey, loadedJwk, jwkSaveFile) 
 			return importJWK(jwk).then((signingKey) => ({jwk, signingKey}));
 		})
 		.then(({jwk, signingKey}) => {
-			const app = configureApp(ttl, users, jwk, signingKey);
+			const app = configureApp(ttl, users, clients, jwk, signingKey);
 
 			const httpServer = createHttpServer(app);
 			const listeners = [createListener(httpServer, port, `HTTP server listening on port ${port}`)];
@@ -459,6 +467,7 @@ const main = () => {
 	let tlsPort = env.TLS_PORT ? +env.TLS_PORT : 8443;
 	let ttl = env.TTL ? +env.TTL : 300;
 	let usersFile = env.USERS_FILE;
+	let clientsFile = env.CLIENTS_FILE;
 	let certFile = env.CERT_FILE;
 	let keyFile = env.KEY_FILE;
 	let jwkFile = env.JWK_FILE;
@@ -482,6 +491,10 @@ const main = () => {
 			case '-u':
 			case '--users':
 				usersFile = argv[i++];
+				break;
+			case '-l':
+			case '--clients':
+				clientsFile = argv[i++];
 				break;
 			case '-c':
 			case '--cert':
@@ -511,7 +524,7 @@ const main = () => {
 	if (help) {
 		if (error) console.error(`Unexpected argument: ${error}`);
 		console.error(
-			`Usage: ${argv[1]} [-p|--port <port>] [-s|--tls-port <TLS port>] [-t|--ttl <token ttl>] [-u|--users <YAML file>] [-c|--cert <SSL certificate>] [-k|--key <SSL key>] [-j|--jwk <JWK file>] [--save-jwk <JWK file>]`
+			`Usage: ${argv[1]} [-p|--port <port>] [-s|--tls-port <TLS port>] [-t|--ttl <token ttl>] [-u|--users <YAML file>] [-l|--clients <YAML file>] [-c|--cert <SSL certificate>] [-k|--key <SSL key>] [-j|--jwk <JWK file>] [--save-jwk <JWK file>]`
 		);
 		process.exit(1);
 	}
@@ -523,6 +536,11 @@ const main = () => {
 	if (usersFile) {
 		console.log(`Loading users from "${usersFile}"`);
 		users = parse(readFileSync(usersFile, 'utf8'));
+	}
+	let clients = defaultClients;
+	if (clientsFile) {
+		console.log(`Loading clients from "${clientsFile}"`);
+		clients = parse(readFileSync(clientsFile, 'utf8'));
 	}
 	let cert, tlsKey;
 	if (certFile) {
@@ -551,7 +569,7 @@ const main = () => {
 		console.log('Stopping server');
 		process.exit(0);
 	});
-	start(port, tlsPort, ttl, users, cert, tlsKey, jwk, jwkSaveFile).catch(
+	start(port, tlsPort, ttl, users, clients, cert, tlsKey, jwk, jwkSaveFile).catch(
 		(error) => (console.error(error), process.exit(1))
 	);
 };
