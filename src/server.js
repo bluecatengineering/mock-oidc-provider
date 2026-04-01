@@ -231,7 +231,7 @@ const handleToken =
 				if (!client) {
 					return res.status(401).json({error: 'invalid_client', error_description: 'Client not found'});
 				}
-				const baseClaims = buildBaseClaims(req, ttl);
+				const baseClaims = buildBaseClaims(req, ttl, client.aud);
 				const accessClaims = {...client, ...baseClaims, scope};
 				return signJwt(buildHeader(jwk), accessClaims, signingKey).then((access_token) =>
 					res.json({token_type: 'bearer', expires_in: ttl, access_token})
