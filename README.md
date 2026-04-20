@@ -49,8 +49,11 @@ The server can be configured either via command-line parameters or environment v
 | -l, --clients  | CLIENTS_FILE | path to a clients YAML file                                   |         |
 | -c, --cert     | CERT_FILE    | TLS certificate file (see TLS section)                        |         |
 | -k, --key      | KEY_FILE     | TLS private key file (see TLS section)                        |         |
+| -i, --issuer   | ISSUER_URL   | static issuer URL to use instead of the request host          |         |
 | -j, --jwk      | JWK_FILE     | path to a JWK file used for signing tokens                    |         |
 | --save-jwk     |              | save the active JWK to the given file                         |         |
+
+If `--issuer` is not provided, the issuer is derived from each request's protocol and host.
 
 If `--jwk` is not provided, a random RSA key is generated automatically.
 Use `--save-jwk <file>` to write the active JWK (whether generated or loaded) to a JSON file for later reuse.
