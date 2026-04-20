@@ -119,7 +119,7 @@ const handleOpenidConfiguration = (req, res) => {
 const handleJwks =
 	({jwk: {kty, alg, kid, e, n}}) =>
 	(req, res) =>
-		res.json({keys: [{kty, alg, kid, e, n}]});
+		res.json({keys: [{use: 'sig', kty, alg, kid, e, n}]});
 
 const handleAuthorize =
 	({users, codes, sessions}) =>
