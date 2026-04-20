@@ -28,10 +28,10 @@ const createToken = () => randomBytes(16).toString('base64url');
 const encodeVerifier = (verifier, challengeMethod) =>
 	challengeMethod === 'S256' ? createHash('sha256').update(verifier).digest('base64url') : verifier;
 
-const getIssuer = (req) => `${req.protocol}://${req.headers.host}/`; // ending in '/' for Auth0 compatibility
+const getIssuer = (req, issuer) => issuer || `${req.protocol}://${req.headers.host}/`; // ending in '/' for Auth0 compatibility
 
-const buildBaseClaims = (req, ttl, aud) => {
-	const iss = getIssuer(req);
+const buildBaseClaims = (req, issuer, ttl, aud) => {
+	const iss = getIssuer(req, issuer);
 	const iat = floor(Date.now() / 1000);
 	const nbf = iat - 5;
 	const exp = iat + ttl;
@@ -44,10 +44,10 @@ const buildHeader = (jwk) => ({typ: 'JWT', alg: 'RS256', kid: jwk.kid});
 
 const buildCookie = (sessionId) => `mock-auth=${sessionId}; Path=/; HttpOnly; SameSite=None; Secure; Max-Age=86400`;
 
-const sendToken = (req, res, session, jwk, signingKey, ttl, aud, scope, nonce) => {
+const sendToken = (req, res, session, issuer, jwk, signingKey, ttl, aud, scope, nonce) => {
 	const token = createToken();
 	const header = buildHeader(jwk);
-	const baseClaims = buildBaseClaims(req, ttl, aud);
+	const baseClaims = buildBaseClaims(req, issuer, ttl, aud);
 	const {accessClaims: userAccessClaims, idClaims: userIdClaims, ...userClaims} = session.user;
 	const accessClaims = {...userClaims, ...userAccessClaims, ...baseClaims, scope};
 	const idClaims = {...userClaims, ...userIdClaims, ...baseClaims, nonce};
@@ -92,29 +92,31 @@ const revokeSession = (req, res, sessions, uri) => {
 	res.redirect(uri);
 };
 
-const handleOpenidConfiguration = (req, res) => {
-	const base = `${req.protocol}://${req.headers.host}`;
-	res.json({
-		issuer: getIssuer(req),
-		jwks_uri: `${base}/.well-known/jwks.json`,
-		authorization_endpoint: `${base}/authorize`,
-		token_endpoint: `${base}/oauth/token`,
-		revocation_endpoint: `${base}/oauth/revoke`,
-		end_session_endpoint: `${base}/oidc/logout`,
-		userinfo_endpoint: `${base}/userinfo`,
-		introspection_endpoint: `${base}/introspect`,
-		claims_supported: ['aud', 'email', 'exp', 'iat', 'iss', 'name', 'sub'],
-		code_challenge_methods_supported: supportedCodeChallengeMethods,
-		grant_types_supported: ['authorization_code', 'client_credentials', 'password', 'refresh_token'],
-		id_token_signing_alg_values_supported: ['RS256'],
-		response_modes_supported: ['query'],
-		response_types_supported: ['code'],
-		scopes_supported: ['openid', 'profile', 'email'],
-		subject_types_supported: ['public'],
-		token_endpoint_auth_methods_supported: ['client_secret_basic', 'client_secret_post'],
-		token_endpoint_auth_signing_alg_values_supported: ['RS256'],
-	});
-};
+const handleOpenidConfiguration =
+	({issuer}) =>
+	(req, res) => {
+		const base = `${req.protocol}://${req.headers.host}`;
+		res.json({
+			issuer: getIssuer(req, issuer),
+			jwks_uri: `${base}/.well-known/jwks.json`,
+			authorization_endpoint: `${base}/authorize`,
+			token_endpoint: `${base}/oauth/token`,
+			revocation_endpoint: `${base}/oauth/revoke`,
+			end_session_endpoint: `${base}/oidc/logout`,
+			userinfo_endpoint: `${base}/userinfo`,
+			introspection_endpoint: `${base}/introspect`,
+			claims_supported: ['aud', 'email', 'exp', 'iat', 'iss', 'name', 'sub'],
+			code_challenge_methods_supported: supportedCodeChallengeMethods,
+			grant_types_supported: ['authorization_code', 'client_credentials', 'password', 'refresh_token'],
+			id_token_signing_alg_values_supported: ['RS256'],
+			response_modes_supported: ['query'],
+			response_types_supported: ['code'],
+			scopes_supported: ['openid', 'profile', 'email'],
+			subject_types_supported: ['public'],
+			token_endpoint_auth_methods_supported: ['client_secret_basic', 'client_secret_post'],
+			token_endpoint_auth_signing_alg_values_supported: ['RS256'],
+		});
+	};
 
 const handleJwks =
 	({jwk: {kty, alg, kid, e, n}}) =>
@@ -201,7 +203,7 @@ form.error.onclick = () => {
 	};
 
 const handleToken =
-	({users, clients, codes, sessions, ttl, jwk, signingKey}) =>
+	({users, clients, codes, sessions, ttl, issuer, jwk, signingKey}) =>
 	(req, res) => {
 		res.setHeader('Cache-Control', 'no-store');
 		switch (req.body.grant_type) {
@@ -223,7 +225,7 @@ const handleToken =
 					return res.status(401).json({error: 'invalid_request', error_description: 'Session not found'});
 				}
 
-				return sendToken(req, res, session, jwk, signingKey, ttl, aud, scope, nonce);
+				return sendToken(req, res, session, issuer, jwk, signingKey, ttl, aud, scope, nonce);
 			}
 			case 'client_credentials': {
 				const {client_id: clientId, scope} = req.body;
@@ -231,7 +233,7 @@ const handleToken =
 				if (!client) {
 					return res.status(401).json({error: 'invalid_client', error_description: 'Client not found'});
 				}
-				const baseClaims = buildBaseClaims(req, ttl, client.aud);
+				const baseClaims = buildBaseClaims(req, issuer, ttl, client.aud);
 				const accessClaims = {...client, ...baseClaims, scope};
 				return signJwt(buildHeader(jwk), accessClaims, signingKey).then((access_token) =>
 					res.json({token_type: 'bearer', expires_in: ttl, access_token})
@@ -247,7 +249,7 @@ const handleToken =
 				const sessionId = createToken();
 				const session = {id: sessionId, user};
 				sessions.set(sessionId, session);
-				return sendToken(req, res, session, jwk, signingKey, ttl, undefined, scope);
+				return sendToken(req, res, session, issuer, jwk, signingKey, ttl, undefined, scope);
 			}
 			case 'refresh_token': {
 				const {client_id: aud, refresh_token: refreshToken, scope} = req.body;
@@ -261,7 +263,7 @@ const handleToken =
 					return res.status(401).json({error: 'login_required', error_description: 'Token not found'});
 				}
 
-				return sendToken(req, res, session, jwk, signingKey, ttl, aud, scope);
+				return sendToken(req, res, session, issuer, jwk, signingKey, ttl, aud, scope);
 			}
 		}
 		return res.status(401).json({error: 'invalid_request', error_description: 'Unexpected grant type'});
@@ -378,13 +380,14 @@ const cors = (req, res, next) => {
 	next();
 };
 
-const configureApp = (ttl, users, clients, jwk, signingKey) => {
+const configureApp = (ttl, users, clients, issuer, jwk, signingKey) => {
 	const context = {
 		codes: new Map(),
 		sessions: new Map(),
 		ttl,
 		users,
 		clients,
+		issuer,
 		jwk,
 		signingKey,
 	};
@@ -395,7 +398,7 @@ const configureApp = (ttl, users, clients, jwk, signingKey) => {
 	app.use(cookieParser());
 	app.use(cors);
 
-	app.get('/.well-known/openid-configuration', handleOpenidConfiguration);
+	app.get('/.well-known/openid-configuration', handleOpenidConfiguration(context));
 	app.get('/.well-known/jwks.json', handleJwks(context));
 	app.get('/authorize', handleAuthorize(context));
 	app.post('/oauth/token', handleToken(context));
@@ -437,7 +440,7 @@ const createListener = (server, port, description) =>
 		});
 	});
 
-const start = (port, tlsPort, ttl, users, clients, cert, tlsKey, loadedJwk, jwkSaveFile) =>
+const start = (port, tlsPort, ttl, users, clients, cert, tlsKey, issuer, loadedJwk, jwkSaveFile) =>
 	(loadedJwk ? Promise.resolve(loadedJwk) : generateJwk())
 		.then((jwk) => {
 			if (jwkSaveFile) {
@@ -446,7 +449,7 @@ const start = (port, tlsPort, ttl, users, clients, cert, tlsKey, loadedJwk, jwkS
 			return importJWK(jwk).then((signingKey) => ({jwk, signingKey}));
 		})
 		.then(({jwk, signingKey}) => {
-			const app = configureApp(ttl, users, clients, jwk, signingKey);
+			const app = configureApp(ttl, users, clients, issuer, jwk, signingKey);
 
 			const httpServer = createHttpServer(app);
 			const listeners = [createListener(httpServer, port, `HTTP server listening on port ${port}`)];
@@ -470,6 +473,7 @@ const main = () => {
 	let clientsFile = env.CLIENTS_FILE;
 	let certFile = env.CERT_FILE;
 	let keyFile = env.KEY_FILE;
+	let issuerUrl = env.ISSUER_URL;
 	let jwkFile = env.JWK_FILE;
 	let jwkSaveFile = false;
 	let error = null;
@@ -504,6 +508,10 @@ const main = () => {
 			case '--key':
 				keyFile = argv[i++];
 				break;
+			case '-i':
+			case '--issuer':
+				issuerUrl = argv[i++];
+				break;
 			case '-j':
 			case '--jwk':
 				jwkFile = argv[i++];
@@ -524,7 +532,7 @@ const main = () => {
 	if (help) {
 		if (error) console.error(`Unexpected argument: ${error}`);
 		console.error(
-			`Usage: ${argv[1]} [-p|--port <port>] [-s|--tls-port <TLS port>] [-t|--ttl <token ttl>] [-u|--users <YAML file>] [-l|--clients <YAML file>] [-c|--cert <SSL certificate>] [-k|--key <SSL key>] [-j|--jwk <JWK file>] [--save-jwk <JWK file>]`
+			`Usage: ${argv[1]} [-p|--port <port>] [-s|--tls-port <TLS port>] [-t|--ttl <token ttl>] [-u|--users <YAML file>] [-l|--clients <YAML file>] [-c|--cert <SSL certificate>] [-k|--key <SSL key>] [-i|--issuer <issuer URL>] [-j|--jwk <JWK file>] [--save-jwk <JWK file>]`
 		);
 		process.exit(1);
 	}
@@ -569,7 +577,7 @@ const main = () => {
 		console.log('Stopping server');
 		process.exit(0);
 	});
-	start(port, tlsPort, ttl, users, clients, cert, tlsKey, jwk, jwkSaveFile).catch(
+	start(port, tlsPort, ttl, users, clients, cert, tlsKey, issuerUrl, jwk, jwkSaveFile).catch(
 		(error) => (console.error(error), process.exit(1))
 	);
 };
