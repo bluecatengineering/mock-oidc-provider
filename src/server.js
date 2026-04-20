@@ -28,7 +28,7 @@ const createToken = () => randomBytes(16).toString('base64url');
 const encodeVerifier = (verifier, challengeMethod) =>
 	challengeMethod === 'S256' ? createHash('sha256').update(verifier).digest('base64url') : verifier;
 
-const getIssuer = (req) => `${req.protocol}://${req.headers.host}/`; // ending in '/' for Auth0 compatibility
+const getIssuer = (req) => process.env.ISSUER_URL || `${req.protocol}://${req.headers.host}/`; // ending in '/' for Auth0 compatibility
 
 const buildBaseClaims = (req, ttl, aud) => {
 	const iss = getIssuer(req);
@@ -119,7 +119,7 @@ const handleOpenidConfiguration = (req, res) => {
 const handleJwks =
 	({jwk: {kty, alg, kid, e, n}}) =>
 	(req, res) =>
-		res.json({keys: [{kty, alg, kid, e, n}]});
+		res.json({keys: [{use: 'sig', kty, alg, kid, e, n}]});
 
 const handleAuthorize =
 	({users, codes, sessions}) =>
