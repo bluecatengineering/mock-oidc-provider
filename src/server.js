@@ -63,11 +63,16 @@ const sendToken = (req, res, session, issuer, jwk, signingKey, ttl, aud, scope, 
 		);
 };
 
-const sanitized = {'<': '&lt;', '>': '&gt;'};
-const sanitize = (string) => string.replace(/[<>]/g, (ch) => sanitized[ch]);
+const sanitized = {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'};
+const sanitize = (string) => string.replace(/[&<>"]/g, (ch) => sanitized[ch]);
+
+// '<' is escaped so that a value containing '</script>' cannot break out of the inline script
+const toScriptJson = (value) => JSON.stringify(value).replace(/</g, '\\u003c');
 
 const renderOptions = (users) =>
-	users.map(({sub, idClaims}) => `<option value="${sub}">${idClaims?.name || sub}</option>`).join('');
+	users
+		.map(({sub, idClaims}) => `<option value="${sanitize(sub)}">${sanitize(idClaims?.name || sub)}</option>`)
+		.join('');
 
 const showErrorPage = (res, message) =>
 	res.setHeader('Cache-Control', 'no-cache').setHeader('Content-Type', 'text/html; charset=utf-8').end(`<!doctype html>
@@ -177,7 +182,7 @@ margin: 0 auto;
 <main>
 <form id="form" method="GET" action="/api/form">
 <h1>Mock Authentication</h1>
-<div>Client ID: <output>${clientId}</output></div>
+<div>Client ID: <output>${sanitize(clientId)}</output></div>
 <label for="sub">Subject:</label>
 <select id="sub" name="sub" autofocus>${renderOptions(users)}</select>
 <button type="submit">Authorize</button>
@@ -186,7 +191,7 @@ margin: 0 auto;
 </main>
 <script>
 var form = document.getElementById('form');
-var params = new URLSearchParams(${JSON.stringify({redirect_uri: redirectUri, code_challenge: challenge, code_challenge_method: challengeMethod, scope, state, nonce})});
+var params = new URLSearchParams(${toScriptJson({redirect_uri: redirectUri, code_challenge: challenge, code_challenge_method: challengeMethod, scope, state, nonce})});
 form.onsubmit = (event) => {
 	event.preventDefault();
 	params.set('sub', form.elements.sub.value);
