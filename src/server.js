@@ -452,13 +452,11 @@ const writeJwk = (jwk, filename) => {
 
 const createListener = (server, port, description) =>
 	new Promise((resolve, reject) => {
-		server.listen(port, (error) => {
-			if (error) {
-				reject(error);
-			} else {
-				console.log(description);
-				resolve();
-			}
+		server.once('error', reject);
+		server.listen(port, () => {
+			server.removeListener('error', reject);
+			console.log(description);
+			resolve();
 		});
 	});
 
@@ -595,10 +593,12 @@ const main = () => {
 			jwk.alg = 'RS256';
 		}
 	}
-	process.once('SIGINT', () => {
+	const stop = () => {
 		console.log('Stopping server');
 		process.exit(0);
-	});
+	};
+	process.once('SIGINT', stop);
+	process.once('SIGTERM', stop);
 	start(port, tlsPort, ttl, users, clients, cert, tlsKey, issuerUrl, jwk, jwkSaveFile).catch(
 		(error) => (console.error(error), process.exit(1))
 	);
