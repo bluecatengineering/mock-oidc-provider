@@ -5,6 +5,7 @@
   "license": "ISC",
   "scripts": {
     "build-docker": "docker buildx build -t mock-oidc-provider .",
+    "test": "node --test test/*.test.js",
     "lint": "eslint .",
     "lint-ci": "eslint . -f @microsoft/eslint-formatter-sarif -o build/eslint-results.sarif",
     "prepare": "husky || true"
