@@ -3,7 +3,7 @@ COPY . /app
 WORKDIR /app
 RUN npm ci --omit=dev
 
-FROM gcr.io/distroless/nodejs22-debian12
+FROM gcr.io/distroless/nodejs24-debian13
 EXPOSE 80
 EXPOSE 443
 ENV PORT=80
