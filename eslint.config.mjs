@@ -16,6 +16,12 @@ export default [
 		},
 	},
 	{
+		files: ['test/**/*.js'],
+		rules: {
+			'@bluecateng/no-async': 'off',
+		},
+	},
+	{
 		ignores: ['build/**', 'dist/**'],
 	},
 ];
