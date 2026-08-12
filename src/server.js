@@ -25,8 +25,16 @@ const defaultClients = [{sub: 'baz'}];
 
 const createToken = () => randomBytes(16).toString('base64url');
 
+// omits absent parameters so that they are not serialized as the string 'undefined'
+const buildParams = (params) => new URLSearchParams(Object.entries(params).filter(([, value]) => value !== undefined));
+
 const encodeVerifier = (verifier, challengeMethod) =>
-	challengeMethod === 'S256' ? createHash('sha256').update(verifier).digest('base64url') : verifier;
+	// a missing (or repeated) code_verifier can never match a challenge
+	typeof verifier !== 'string'
+		? undefined
+		: challengeMethod === 'S256'
+			? createHash('sha256').update(verifier).digest('base64url')
+			: verifier;
 
 const getIssuer = (req, issuer) => issuer || `${req.protocol}://${req.headers.host}/`; // ending in '/' for Auth0 compatibility
 
@@ -64,7 +72,7 @@ const sendToken = (req, res, session, issuer, jwk, signingKey, ttl, aud, scope, 
 };
 
 const sanitized = {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'};
-const sanitize = (string) => string.replace(/[&<>"]/g, (ch) => sanitized[ch]);
+const sanitize = (value) => String(value).replace(/[&<>"]/g, (ch) => sanitized[ch]);
 
 // '<' is escaped so that a value containing '</script>' cannot break out of the inline script
 const toScriptJson = (value) => JSON.stringify(value).replace(/</g, '\\u003c');
@@ -74,8 +82,9 @@ const renderOptions = (users) =>
 		.map(({sub, idClaims}) => `<option value="${sanitize(sub)}">${sanitize(idClaims?.name || sub)}</option>`)
 		.join('');
 
-const showErrorPage = (res, message) =>
-	res.setHeader('Cache-Control', 'no-cache').setHeader('Content-Type', 'text/html; charset=utf-8').end(`<!doctype html>
+const showErrorPage = (res, message, status = 400) =>
+	res.status(status).setHeader('Cache-Control', 'no-cache').setHeader('Content-Type', 'text/html; charset=utf-8')
+		.end(`<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -149,7 +158,7 @@ const handleAuthorize =
 		} else if (sessionId && sessions.has(sessionId)) {
 			const code = createToken();
 			codes.set(code, {sessionId, challenge, challengeMethod, scope, nonce});
-			res.redirect(`${redirectUri}?${new URLSearchParams({code, state})}`);
+			res.redirect(`${redirectUri}?${buildParams({code, state})}`);
 		} else {
 			res.setHeader('Cache-Control', 'no-cache').setHeader('Content-Type', 'text/html; charset=utf-8')
 				.end(`<!doctype html>
@@ -343,21 +352,28 @@ const handleForm =
 			state,
 			nonce,
 		} = req.query;
+		// without a redirect URI there is nowhere to report the outcome to
+		if (typeof redirectUri !== 'string') {
+			showErrorPage(res, 'A single redirect_uri is required.');
+			return;
+		}
+		const user = users.find((user) => user.sub === sub);
 		if (error) {
 			res.redirect(
-				`${redirectUri}?${new URLSearchParams({error: 'access_denied', error_description: 'Access has been denied'})}`
+				`${redirectUri}?${buildParams({error: 'access_denied', error_description: 'Access has been denied'})}`
+			);
+		} else if (!user) {
+			res.redirect(
+				`${redirectUri}?${buildParams({error: 'invalid_request', error_description: 'The subject is not a known user'})}`
 			);
 		} else {
 			const sessionId = createToken();
-			const user = users.find((user) => user.sub === sub);
 			const session = {id: sessionId, user};
 			sessions.set(sessionId, session);
 
 			const code = createToken();
 			codes.set(code, {sessionId, challenge, challengeMethod, scope, nonce});
-			res
-				.setHeader('Set-Cookie', buildCookie(sessionId))
-				.redirect(`${redirectUri}?${new URLSearchParams({code, state})}`);
+			res.setHeader('Set-Cookie', buildCookie(sessionId)).redirect(`${redirectUri}?${buildParams({code, state})}`);
 		}
 	};
 
