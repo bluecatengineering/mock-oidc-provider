@@ -43,7 +43,7 @@ const buildBaseClaims = (req, issuer, ttl, aud) => {
 	const iat = floor(Date.now() / 1000);
 	const nbf = iat - 5;
 	const exp = iat + ttl;
-	return {iss, aud, iat, nbf, exp, auth_time: iat};
+	return {iss, aud, iat, nbf, exp};
 };
 
 const signJwt = (header, payload, key) => new SignJWT(payload).setProtectedHeader(header).sign(key);
@@ -55,7 +55,8 @@ const buildCookie = (sessionId) => `mock-auth=${sessionId}; Path=/; HttpOnly; Sa
 const sendToken = (req, res, session, issuer, jwk, signingKey, ttl, aud, scope, nonce) => {
 	const token = createToken();
 	const header = buildHeader(jwk);
-	const baseClaims = buildBaseClaims(req, issuer, ttl, aud);
+	// auth_time must stay at the original authentication, even when the token is refreshed later
+	const baseClaims = {...buildBaseClaims(req, issuer, ttl, aud), auth_time: session.authTime};
 	const {accessClaims: userAccessClaims, idClaims: userIdClaims, ...userClaims} = session.user;
 	const accessClaims = {...userClaims, ...userAccessClaims, ...baseClaims, scope};
 	const idClaims = {...userClaims, ...userIdClaims, ...baseClaims, nonce};
@@ -254,16 +255,16 @@ const handleToken =
 				);
 			}
 			case 'password': {
-				const {username: sub, scope} = req.body;
+				const {username: sub, scope, client_id: aud} = req.body;
 				const user = users.find((user) => user.sub === sub);
 				if (!user) {
 					return res.status(401).json({error: 'invalid_request', error_description: 'User not found'});
 				}
 
 				const sessionId = createToken();
-				const session = {id: sessionId, user};
+				const session = {id: sessionId, user, authTime: floor(Date.now() / 1000)};
 				sessions.set(sessionId, session);
-				return sendToken(req, res, session, issuer, jwk, signingKey, ttl, undefined, scope);
+				return sendToken(req, res, session, issuer, jwk, signingKey, ttl, aud, scope);
 			}
 			case 'refresh_token': {
 				const {client_id: aud, refresh_token: refreshToken, scope} = req.body;
@@ -360,15 +361,15 @@ const handleForm =
 		const user = users.find((user) => user.sub === sub);
 		if (error) {
 			res.redirect(
-				`${redirectUri}?${buildParams({error: 'access_denied', error_description: 'Access has been denied'})}`
+				`${redirectUri}?${buildParams({error: 'access_denied', error_description: 'Access has been denied', state})}`
 			);
 		} else if (!user) {
 			res.redirect(
-				`${redirectUri}?${buildParams({error: 'invalid_request', error_description: 'The subject is not a known user'})}`
+				`${redirectUri}?${buildParams({error: 'invalid_request', error_description: 'The subject is not a known user', state})}`
 			);
 		} else {
 			const sessionId = createToken();
-			const session = {id: sessionId, user};
+			const session = {id: sessionId, user, authTime: floor(Date.now() / 1000)};
 			sessions.set(sessionId, session);
 
 			const code = createToken();
