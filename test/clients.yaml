@@ -1,0 +1,2 @@
+# a client id that has to survive a round trip through form encoding
+- sub: my service

@@ -42,6 +42,33 @@ const encodeVerifier = (verifier, challengeMethod) =>
 			? createHash('sha256').update(verifier).digest('base64url')
 			: verifier;
 
+// RFC 6749 §2.3.1: both values are form-urlencoded before the pair is encoded for basic authentication
+const decodeCredential = (value) => decodeURIComponent(value.replace(/\+/g, ' '));
+
+// client_secret_post carries the client id in the body, client_secret_basic in the authorization header;
+// the secret itself is never checked, since any secret is accepted for a mock client
+const getClientId = (req) => {
+	const {client_id: clientId} = req.body;
+	if (typeof clientId === 'string') {
+		return clientId;
+	}
+	const header = req.headers.authorization;
+	if (!header || !/^Basic /i.test(header)) {
+		return undefined;
+	}
+	const decoded = Buffer.from(header.slice(6), 'base64').toString('utf8');
+	// the secret may contain colons of its own, so only the first one separates the two values
+	const separator = decoded.indexOf(':');
+	if (separator === -1) {
+		return undefined;
+	}
+	try {
+		return decodeCredential(decoded.slice(0, separator));
+	} catch {
+		return undefined; // malformed percent-encoding leaves no id to look up
+	}
+};
+
 // req.protocol and req.host follow the X-Forwarded-* headers, see the 'trust proxy' setting
 const getIssuer = (req, issuer) => issuer || `${req.protocol}://${req.host}/`; // ending in '/' for Auth0 compatibility
 
@@ -238,9 +265,11 @@ const handleToken =
 	({users, clients, codes, sessions, ttl, issuer, jwk, signingKey}) =>
 	(req, res) => {
 		res.setHeader('Cache-Control', 'no-store');
+		// the client picks the authentication method, so the id does not always arrive in the body
+		const aud = getClientId(req);
 		switch (req.body.grant_type) {
 			case 'authorization_code': {
-				const {client_id: aud, code, code_verifier: verifier} = req.body;
+				const {code, code_verifier: verifier} = req.body;
 				const data = codes.get(code);
 				if (!data) {
 					return res.status(401).json({error: 'invalid_request', error_description: 'Code not found'});
@@ -260,8 +289,8 @@ const handleToken =
 				return sendToken(req, res, session, issuer, jwk, signingKey, ttl, aud, scope, nonce);
 			}
 			case 'client_credentials': {
-				const {client_id: clientId, scope} = req.body;
-				const client = clients.find((client) => client.sub === clientId);
+				const {scope} = req.body;
+				const client = clients.find((client) => client.sub === aud);
 				if (!client) {
 					return res.status(401).json({error: 'invalid_client', error_description: 'Client not found'});
 				}
@@ -272,7 +301,7 @@ const handleToken =
 				);
 			}
 			case 'password': {
-				const {username: sub, scope, client_id: aud} = req.body;
+				const {username: sub, scope} = req.body;
 				const user = users.find((user) => user.sub === sub);
 				if (!user) {
 					return res.status(401).json({error: 'invalid_request', error_description: 'User not found'});
@@ -284,7 +313,7 @@ const handleToken =
 				return sendToken(req, res, session, issuer, jwk, signingKey, ttl, aud, scope);
 			}
 			case 'refresh_token': {
-				const {client_id: aud, refresh_token: refreshToken, scope} = req.body;
+				const {refresh_token: refreshToken, scope} = req.body;
 				// the token identifies the session; a cookie is not available to clients refreshing from a server
 				const session = sessions.values().find((s) => s.token && s.token === refreshToken);
 				if (!session) {
