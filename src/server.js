@@ -28,6 +28,12 @@ const createToken = () => randomBytes(16).toString('base64url');
 // omits absent parameters so that they are not serialized as the string 'undefined'
 const buildParams = (params) => new URLSearchParams(Object.entries(params).filter(([, value]) => value !== undefined));
 
+// the redirect URI may already carry a query string of its own
+const addQuery = (uri, params) => {
+	const query = buildParams(params);
+	return query.size ? `${uri}${uri.includes('?') ? '&' : '?'}${query}` : uri;
+};
+
 const encodeVerifier = (verifier, challengeMethod) =>
 	// a missing (or repeated) code_verifier can never match a challenge
 	typeof verifier !== 'string'
@@ -87,7 +93,7 @@ const renderOptions = (users) =>
 		.map(({sub, idClaims}) => `<option value="${sanitize(sub)}">${sanitize(idClaims?.name || sub)}</option>`)
 		.join('');
 
-const showErrorPage = (res, message, status = 400) =>
+const showPage = (res, heading, message, status = 200) =>
 	res.status(status).setHeader('Cache-Control', 'no-cache').setHeader('Content-Type', 'text/html; charset=utf-8')
 		.end(`<!doctype html>
 <html lang="en">
@@ -97,18 +103,25 @@ const showErrorPage = (res, message, status = 400) =>
 <title>Mock Authentication</title>
 </head>
 <body>
-<h1>Error</h1>
+<h1>${heading}</h1>
 <p>${message}</p>
 </body>
 </html>`);
 
-const revokeSession = (req, res, sessions, uri) => {
+const showErrorPage = (res, message, status = 400) => showPage(res, 'Error', message, status);
+
+const revokeSession = (req, res, sessions, uri, state) => {
 	const sessionId = req.cookies['mock-auth'];
 	if (sessionId) {
 		sessions.delete(sessionId);
 		res.setHeader('Set-Cookie', `mock-auth=; Path=/; Max-Age=0`);
 	}
-	res.redirect(uri);
+	// the redirect URI is optional; without one the provider reports the outcome itself
+	if (typeof uri === 'string') {
+		res.redirect(addQuery(uri, {state}));
+	} else {
+		showPage(res, 'Signed out', 'You have been signed out.');
+	}
 };
 
 const handleOpenidConfiguration =
@@ -272,13 +285,9 @@ const handleToken =
 			}
 			case 'refresh_token': {
 				const {client_id: aud, refresh_token: refreshToken, scope} = req.body;
-				const sessionId = req.cookies['mock-auth'];
-				const session = sessions.get(sessionId);
+				// the token identifies the session; a cookie is not available to clients refreshing from a server
+				const session = sessions.values().find((s) => s.token && s.token === refreshToken);
 				if (!session) {
-					return res.status(401).json({error: 'login_required', error_description: 'Session not found'});
-				}
-				if (session.token !== refreshToken) {
-					session.token = null;
 					return res.status(401).json({error: 'login_required', error_description: 'Token not found'});
 				}
 
@@ -304,7 +313,7 @@ const handleRevoke =
 const handleEndSession =
 	({sessions}) =>
 	(req, res) =>
-		revokeSession(req, res, sessions, req.query.post_logout_redirect_uri);
+		revokeSession(req, res, sessions, req.query.post_logout_redirect_uri, req.query.state);
 
 const handleUserInfo =
 	({users}) =>
