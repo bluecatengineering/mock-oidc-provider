@@ -3,12 +3,20 @@
 const {after, before, describe, test} = require('node:test');
 const assert = require('node:assert/strict');
 const {createHash} = require('node:crypto');
+const {join} = require('node:path');
 
 const {startServer, CookieJar, request, decodeJwt, approve, getTokens} = require('./helpers');
 
 const challengeFor = (verifier) => createHash('sha256').update(verifier).digest('base64url');
 const token = (base, form, jar) => request(base, '/oauth/token', {form, jar});
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// RFC 6749 §2.3.1: the credentials are form-urlencoded before they are encoded for basic authentication
+const basicAuth = (clientId, clientSecret = 'any') =>
+	`Basic ${Buffer.from(`${encodeURIComponent(clientId)}:${encodeURIComponent(clientSecret)}`).toString('base64')}`;
+
+const tokenAs = (base, form, authorization) =>
+	request(base, '/oauth/token', {form, headers: {Authorization: authorization}});
 
 describe('the authorization code grant', () => {
 	let server;
@@ -124,6 +132,12 @@ describe('the password grant', () => {
 		const response = await token(server.base, {grant_type: 'password', username: 'nobody', client_id: 'baz'});
 		assert.equal(response.status, 401);
 	});
+
+	test('takes the audience from the authorization header', async () => {
+		const response = await tokenAs(server.base, {grant_type: 'password', username: 'foo'}, basicAuth('baz'));
+		const tokens = await response.json();
+		assert.equal(decodeJwt(tokens.id_token).aud, 'baz');
+	});
 });
 
 describe('the client credentials grant', () => {
@@ -146,6 +160,50 @@ describe('the client credentials grant', () => {
 	test('rejects an unknown client', async () => {
 		const response = await token(server.base, {grant_type: 'client_credentials', client_id: 'nobody'});
 		assert.equal(response.status, 401);
+	});
+
+	// RFC 6749 §2.3.1 calls basic authentication the preferred method, and discovery advertises it as supported
+	test('accepts the client id from the authorization header', async () => {
+		const response = await tokenAs(server.base, {grant_type: 'client_credentials'}, basicAuth('baz'));
+		assert.equal(response.status, 200);
+		const tokens = await response.json();
+		assert.equal(decodeJwt(tokens.access_token).sub, 'baz');
+	});
+
+	test('rejects an unknown client from the authorization header', async () => {
+		const response = await tokenAs(server.base, {grant_type: 'client_credentials'}, basicAuth('nobody'));
+		assert.equal(response.status, 401);
+	});
+
+	// the secret may contain a colon of its own, so only the first one separates the two values
+	test('accepts a secret containing a colon', async () => {
+		const response = await tokenAs(server.base, {grant_type: 'client_credentials'}, basicAuth('baz', 'a:b:c'));
+		assert.equal(response.status, 200);
+	});
+
+	test('rejects a malformed authorization header without failing', async () => {
+		const response = await tokenAs(server.base, {grant_type: 'client_credentials'}, 'Basic bm8tc2VwYXJhdG9y');
+		assert.equal(response.status, 401);
+	});
+});
+
+describe('client ids that need encoding', () => {
+	let server;
+	before(async () => (server = await startServer(['--clients', join(__dirname, 'clients.yaml')])));
+	after(() => server.stop());
+
+	// RFC 6749 §2.3.1 form-urlencodes both values before they are encoded, so the provider has to decode them again
+	test('decodes an encoded client id from the authorization header', async () => {
+		const response = await tokenAs(server.base, {grant_type: 'client_credentials'}, basicAuth('my service'));
+		assert.equal(response.status, 200);
+		assert.equal(decodeJwt(await response.json().then((t) => t.access_token)).sub, 'my service');
+	});
+
+	// form encoding writes a space as '+', which a client library may well produce instead of '%20'
+	test('decodes a plus in the client id as a space', async () => {
+		const encoded = Buffer.from('my+service:any').toString('base64');
+		const response = await tokenAs(server.base, {grant_type: 'client_credentials'}, `Basic ${encoded}`);
+		assert.equal(response.status, 200);
 	});
 });
 
