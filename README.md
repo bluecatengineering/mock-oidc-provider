@@ -53,10 +53,28 @@ The server can be configured either via command-line parameters or environment v
 | -j, --jwk      | JWK_FILE     | path to a JWK file used for signing tokens                    |         |
 | --save-jwk     |              | save the active JWK to the given file                         |         |
 
-If `--issuer` is not provided, the issuer is derived from each request's protocol and host.
-
 If `--jwk` is not provided, a random RSA key is generated automatically.
 Use `--save-jwk <file>` to write the active JWK (whether generated or loaded) to a JSON file for later reuse.
+
+### Issuer
+
+The issuer is the value of the `issuer` field in the discovery document and of the `iss` claim in every token.
+It also determines the endpoint URLs published in the discovery document, so that they always agree with each other.
+
+If `--issuer` is not provided, the issuer is derived from each request as `<protocol>://<host>/`
+(ending in `/` for Auth0 compatibility). A value passed to `--issuer` is used verbatim.
+
+#### Behind a reverse proxy
+
+The `X-Forwarded-Proto` and `X-Forwarded-Host` headers are honored, so a provider running behind a
+TLS-terminating proxy advertises the external `https://` URLs rather than the internal ones it is reached at:
+
+```
+issuer                 https://auth.example.com/
+authorization_endpoint https://auth.example.com/authorize
+```
+
+These headers are accepted from **any** client, which means a caller can influence the advertised URLs. Set `--issuer` to pin the issuer to a fixed value regardless of the incoming headers.
 
 ### Users
 
