@@ -1,0 +1,9 @@
+.git/
+.github/
+.husky/
+.idea/
+node_modules/
+build/
+dist/
+*.md
+!README.md
