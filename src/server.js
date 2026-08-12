@@ -36,7 +36,11 @@ const encodeVerifier = (verifier, challengeMethod) =>
 			? createHash('sha256').update(verifier).digest('base64url')
 			: verifier;
 
-const getIssuer = (req, issuer) => issuer || `${req.protocol}://${req.headers.host}/`; // ending in '/' for Auth0 compatibility
+// req.protocol and req.host follow the X-Forwarded-* headers, see the 'trust proxy' setting
+const getIssuer = (req, issuer) => issuer || `${req.protocol}://${req.host}/`; // ending in '/' for Auth0 compatibility
+
+// the endpoints live under the issuer, so a configured issuer also determines where they are published
+const getBaseUrl = (req, issuer) => getIssuer(req, issuer).replace(/\/$/, '');
 
 const buildBaseClaims = (req, issuer, ttl, aud) => {
 	const iss = getIssuer(req, issuer);
@@ -110,7 +114,7 @@ const revokeSession = (req, res, sessions, uri) => {
 const handleOpenidConfiguration =
 	({issuer}) =>
 	(req, res) => {
-		const base = `${req.protocol}://${req.headers.host}`;
+		const base = getBaseUrl(req, issuer);
 		res.json({
 			issuer: getIssuer(req, issuer),
 			jwks_uri: `${base}/.well-known/jwks.json`,
@@ -414,6 +418,7 @@ const configureApp = (ttl, users, clients, issuer, jwk, signingKey) => {
 		signingKey,
 	};
 	const app = express();
+	app.set('trust proxy', true);
 	app.use(morgan('dev'));
 	app.use(json({strict: true}));
 	app.use(urlencoded({extended: false}));
