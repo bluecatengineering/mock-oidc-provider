@@ -5,6 +5,7 @@ const {readFileSync, writeFileSync} = require('node:fs');
 const {createServer: createHttpServer} = require('node:http');
 const {createServer: createHttpsServer} = require('node:https');
 const {randomBytes, createHash} = require('node:crypto');
+const {parseArgs} = require('node:util');
 
 const express = require('express');
 const morgan = require('morgan');
@@ -525,80 +526,48 @@ const start = (port, tlsPort, ttl, users, clients, cert, tlsKey, issuer, loadedJ
 			return Promise.all(listeners).then(() => undefined);
 		});
 
+const cliOptions = {
+	port: {type: 'string', short: 'p'},
+	'tls-port': {type: 'string', short: 's'},
+	ttl: {type: 'string', short: 't'},
+	users: {type: 'string', short: 'u'},
+	clients: {type: 'string', short: 'l'},
+	cert: {type: 'string', short: 'c'},
+	key: {type: 'string', short: 'k'},
+	issuer: {type: 'string', short: 'i'},
+	jwk: {type: 'string', short: 'j'},
+	'save-jwk': {type: 'string'},
+	help: {type: 'boolean', short: 'h'},
+};
+
 const main = () => {
 	const argv = process.argv;
 	const env = process.env;
-	let i = 2;
-	let port = env.PORT ? +env.PORT : 8092;
-	let tlsPort = env.TLS_PORT ? +env.TLS_PORT : 8443;
-	let ttl = env.TTL ? +env.TTL : 300;
-	let usersFile = env.USERS_FILE;
-	let clientsFile = env.CLIENTS_FILE;
-	let certFile = env.CERT_FILE;
-	let keyFile = env.KEY_FILE;
-	let issuerUrl = env.ISSUER_URL;
-	let jwkFile = env.JWK_FILE;
-	let jwkSaveFile = false;
-	let error = null;
-	let help = false;
-	while (i < argv.length && !help) {
-		switch (argv[i++]) {
-			case '-p':
-			case '--port':
-				port = +argv[i++];
-				break;
-			case '-s':
-			case '--tls-port':
-				tlsPort = +argv[i++];
-				break;
-			case '-t':
-			case '--ttl':
-				ttl = +argv[i++];
-				break;
-			case '-u':
-			case '--users':
-				usersFile = argv[i++];
-				break;
-			case '-l':
-			case '--clients':
-				clientsFile = argv[i++];
-				break;
-			case '-c':
-			case '--cert':
-				certFile = argv[i++];
-				break;
-			case '-k':
-			case '--key':
-				keyFile = argv[i++];
-				break;
-			case '-i':
-			case '--issuer':
-				issuerUrl = argv[i++];
-				break;
-			case '-j':
-			case '--jwk':
-				jwkFile = argv[i++];
-				break;
-			case '--save-jwk':
-				jwkSaveFile = argv[i++];
-				break;
-			case '-h':
-			case '--help':
-				help = true;
-				break;
-			default:
-				error = argv[i - 1];
-				help = true;
-				break;
-		}
-	}
-	if (help) {
-		if (error) console.error(`Unexpected argument: ${error}`);
-		console.error(
-			`Usage: ${argv[1]} [-p|--port <port>] [-s|--tls-port <TLS port>] [-t|--ttl <token ttl>] [-u|--users <YAML file>] [-l|--clients <YAML file>] [-c|--cert <SSL certificate>] [-k|--key <SSL key>] [-i|--issuer <issuer URL>] [-j|--jwk <JWK file>] [--save-jwk <JWK file>]`
-		);
+	const usage = `Usage: ${argv[1]} [-p|--port <port>] [-s|--tls-port <TLS port>] [-t|--ttl <token ttl>] [-u|--users <YAML file>] [-l|--clients <YAML file>] [-c|--cert <SSL certificate>] [-k|--key <SSL key>] [-i|--issuer <issuer URL>] [-j|--jwk <JWK file>] [--save-jwk <JWK file>]`;
+	let values;
+	try {
+		({values} = parseArgs({options: cliOptions}));
+	} catch (error) {
+		// unknown options, missing values and stray positionals all end up here
+		console.error(error.message);
+		console.error(usage);
 		process.exit(1);
 	}
+	if (values.help) {
+		console.error(usage);
+		process.exit(1);
+	}
+	// precedence: command line, then environment, then default
+	const port = +(values.port ?? env.PORT ?? 8092);
+	const tlsPort = +(values['tls-port'] ?? env.TLS_PORT ?? 8443);
+	const ttl = +(values.ttl ?? env.TTL ?? 300);
+	const usersFile = values.users ?? env.USERS_FILE;
+	const clientsFile = values.clients ?? env.CLIENTS_FILE;
+	const certFile = values.cert ?? env.CERT_FILE;
+	const keyFile = values.key ?? env.KEY_FILE;
+	const issuerUrl = values.issuer ?? env.ISSUER_URL;
+	const jwkFile = values.jwk ?? env.JWK_FILE;
+	const jwkSaveFile = values['save-jwk'];
 	if ((certFile && !keyFile) || (keyFile && !certFile)) {
 		console.error('Both the SSL certificate and key must be specified at the same time.');
 		process.exit(1);
