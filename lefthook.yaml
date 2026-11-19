@@ -1,0 +1,25 @@
+pre-commit:
+  parallel: true
+  jobs:
+    - name: lint-js
+      glob: '*.{js,mjs,ts}'
+      run: node_modules/.bin/eslint --fix --max-warnings 0 --no-ignore {staged_files} && node_modules/.bin/prettier --write {staged_files}
+      stage_fixed: true
+
+    - name: lint-other
+      glob: '*.{json,md,yaml,yml}'
+      run: node_modules/.bin/prettier --write {staged_files}
+      stage_fixed: true
+
+commit-msg:
+  jobs:
+    - name: commitlint
+      run: node_modules/.bin/commitlint -s -e {1}
+
+pre-push:
+  jobs:
+    - name: git-check-push
+      run: node_modules/.bin/git-check-push {1}
+      use_stdin: true
+
+output: false

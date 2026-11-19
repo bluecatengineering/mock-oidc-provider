@@ -7,8 +7,7 @@
     "build-docker": "docker buildx build -t mock-oidc-provider .",
     "test": "node --test test/*.test.js",
     "lint": "eslint .",
-    "lint-ci": "eslint . -f @microsoft/eslint-formatter-sarif -o build/eslint-results.sarif",
-    "prepare": "husky || true"
+    "lint-ci": "eslint . -f @microsoft/eslint-formatter-sarif -o build/eslint-results.sarif"
   },
   "repository": {
     "type": "git",
@@ -50,8 +49,7 @@
     "commit-and-tag-version": "^13.1.2",
     "eslint": "^10.15.0",
     "eslint-plugin-regexp": "^3.1.0",
-    "husky": "^9.1.7",
-    "lint-staged": "^17.3.0",
+    "lefthook": "^2.2.2",
     "prettier": "^3.6.0"
   },
   "prettier": "@bluecateng/prettier-config",
@@ -60,13 +58,7 @@
       "@bluecateng/commitlint-config-bluecateng"
     ]
   },
-  "lint-staged": {
-    "*.{js,mjs}": [
-      "eslint --fix --max-warnings 0 --no-ignore",
-      "prettier --write"
-    ],
-    "*.{json,md,yaml}": [
-      "prettier --write"
-    ]
+  "allowScripts": {
+    "lefthook": true
   }
 }
