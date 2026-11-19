@@ -595,7 +595,7 @@ const main = () => {
 	if (help) {
 		if (error) console.error(`Unexpected argument: ${error}`);
 		console.error(
-			`Usage: ${argv[1]} [-p|--port <port>] [-s|--tls-port <TLS port>] [-t|--ttl <token ttl>] [-u|--users <YAML file>] [-l|--clients <YAML file>] [-c|--cert <SSL certificate>] [-k|--key <SSL key>] [-i|--issuer <issuer URL>] [-j|--jwk <JWK file>] [--save-jwk <JWK file>]`
+			`Usage!: ${argv[1]} [-p|--port <port>] [-s|--tls-port <TLS port>] [-t|--ttl <token ttl>] [-u|--users <YAML file>] [-l|--clients <YAML file>] [-c|--cert <SSL certificate>] [-k|--key <SSL key>] [-i|--issuer <issuer URL>] [-j|--jwk <JWK file>] [--save-jwk <JWK file>]`
 		);
 		process.exit(1);
 	}
